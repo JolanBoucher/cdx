@@ -1,7 +1,7 @@
 # cdx
 
 Entry point for the CDX vgan tool. One executable, mode picked
-automatically from the input file(s) - no sub-command verbs to learn:
+automatically from the input file(s):
 
 ```
 cdx graph.gbz                 build a CDX index from a GBZ graph       (builder/)
@@ -15,8 +15,8 @@ need to exist, only its extension is used) for a single mode's options.
 
 ## Layout
 
-This is a monorepo: what used to be three separate repositories now live
-directly here, developed and committed together.
+What used to be three separate repositories now live directly here, 
+developed and committed together.
 
 ```
 cdx/
