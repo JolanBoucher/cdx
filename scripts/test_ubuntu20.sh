@@ -9,7 +9,19 @@
 # (focal) box - a clean Docker container, a VM, a CI runner, whatever.
 #
 # Usage (from a fresh ubuntu:20.04 box, run as root or with sudo):
-#   ./scripts/test_ubuntu20.sh
+#   ./scripts/test_ubuntu20.sh [-test|--test]
+#
+# -test/--test: also configure, build, and run each branch's own unit test
+# suite (lib, builder, coverage) and report results. lib's tests are always
+# built as part of the main configure below, so they're just ctest'd there.
+# builder's and coverage's test suites are each built from their own,
+# separate build directory - NOT together in the main merged build - because
+# enabling both CDX_BUILDER_BUILD_TESTS and CDX_BUILD_TESTS in the very same
+# configure risks a GoogleTest target collision (see the comment above
+# set(CDX_BUILDER_BUILD_TESTS ...) in the top-level CMakeLists.txt for the
+# full explanation). Building each branch's tests from its own configure
+# sidesteps that entirely, at the cost of a second GoogleTest fetch/build per
+# branch.
 #
 # Known compatibility risks, both left visible rather than silently patched:
 #
@@ -27,8 +39,21 @@
 
 set -euo pipefail
 
+RUN_TESTS=0
+for arg in "$@"; do
+    case "${arg}" in
+        -test|--test) RUN_TESTS=1 ;;
+        *)
+            echo "Unknown argument: ${arg} (expected -test or --test)" >&2
+            exit 1
+            ;;
+    esac
+done
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${REPO_ROOT}/build-ubuntu20-test"
+BUILDER_TEST_BUILD_DIR="${REPO_ROOT}/builder/build-ubuntu20-test"
+COVERAGE_TEST_BUILD_DIR="${REPO_ROOT}/coverage/build-ubuntu20-test"
 
 echo "==> Repo root: ${REPO_ROOT}"
 echo "==> Build dir: ${BUILD_DIR}"
@@ -87,3 +112,35 @@ echo "==> Sanity check: cdx --help"
 "${BUILD_DIR}/cdx" --help
 
 echo "==> SUCCESS: cdx built and ran on this environment."
+
+if [ "${RUN_TESTS}" -eq 1 ]; then
+    echo ""
+    echo "==> -test passed: running unit test suites"
+
+    echo ""
+    echo "==> lib tests (already built as part of the main configure above)"
+    ctest --test-dir "${BUILD_DIR}/lib" --output-on-failure
+
+    echo ""
+    echo "==> builder tests (own separate configure - see header comment for why)"
+    cmake -S "${REPO_ROOT}/builder" -B "${BUILDER_TEST_BUILD_DIR}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_C_COMPILER=gcc-11 \
+        -DCMAKE_CXX_COMPILER=g++-11 \
+        -DCDX_BUILDER_BUILD_TESTS=ON
+    cmake --build "${BUILDER_TEST_BUILD_DIR}" -j"$(nproc)"
+    ctest --test-dir "${BUILDER_TEST_BUILD_DIR}" --output-on-failure
+
+    echo ""
+    echo "==> coverage tests (own separate configure - see header comment for why)"
+    cmake -S "${REPO_ROOT}/coverage" -B "${COVERAGE_TEST_BUILD_DIR}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_C_COMPILER=gcc-11 \
+        -DCMAKE_CXX_COMPILER=g++-11 \
+        -DCDX_BUILD_TESTS=ON
+    cmake --build "${COVERAGE_TEST_BUILD_DIR}" -j"$(nproc)"
+    ctest --test-dir "${COVERAGE_TEST_BUILD_DIR}" --output-on-failure
+
+    echo ""
+    echo "==> SUCCESS: all three test suites ran on this environment."
+fi

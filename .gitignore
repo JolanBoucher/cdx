@@ -19,6 +19,7 @@
 cmake-build-*/
 build/
 Build/
+build-*/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
@@ -41,9 +42,17 @@ Testing/
 *.dll
 /cdx
 
-# Bundled Python venv auto-provisioned for circular graphs (see CMakeLists.txt)
+# Bundled Python venv auto-provisioned for circular graphs (see CMakeLists.txt).
+# NOTE: circular_plot.py itself is NOT ignored here - the real source lives
+# at coverage/python_script/circular_plot.py and must stay tracked; a bare
+# (path-less) "circular_plot.py" pattern would match it too (gitignore
+# patterns without a leading slash match at every directory depth), which is
+# exactly what happened before this comment existed: the real source file
+# was silently never committed, so a fresh clone's build failed with
+# "No rule to make target '.../circular_plot.py'". The *copies* CMake makes
+# next to build outputs are already covered by the build-dir patterns above
+# (cmake-build-*/, build/, build-*/), so no separate rule is needed for them.
 pyenv/
-circular_plot.py
 
 # ==============================================================================
 # Project-Specific Genomic / Data Files
