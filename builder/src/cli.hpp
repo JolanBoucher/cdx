@@ -65,6 +65,19 @@ struct CliArgs {
 CliArgs parse_args(int argc, char** argv);
 
 /**
+ * @brief Returns this branch's full CLI11-formatted help text (option list,
+ *        usage line, descriptions) without parsing anything and without
+ *        exiting the process.
+ *
+ * Used by the merged "cdx" toolkit executable to print the build branch's
+ * complete option list as part of its own top-level `cdx --help` (invoked
+ * with no input file) - see cdx's src/main.cpp.
+ *
+ * @return The same text CLI11 would print for `cdx_builder --help`.
+ */
+std::string usage_text();
+
+/**
  * @brief Prepares the output file path by ensuring it uses the specified extension.
  *        If `output_filepath` is empty, defaults to using the stem of `input_filepath`.
  *

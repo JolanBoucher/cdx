@@ -37,10 +37,13 @@
 // cdx_builder_core / cdx_coverage_core (see CMakeLists.txt).
 namespace cdx_builder {
     int run(int argc, char** argv);
+    std::string usage_text();
 }
 
 namespace cdx_coverage {
     int run(int argc, char** argv);
+    std::string coverage_usage_text();
+    std::string inspect_usage_text();
 }
 
 namespace {
@@ -117,6 +120,34 @@ std::string describe_problem(const std::string& path) {
            ".gbz file nor a valid .cdx file.";
 }
 
+// Prints the full, detailed help for `cdx --help` (no input file given):
+// the short cheat-sheet up top, then each mode's real, complete CLI11 option
+// list in its own clearly labeled section. Build, coverage, and inspect are
+// three functionally distinct modes (inspect in particular ignores nearly
+// every coverage-mode option - see cdx_coverage::run()'s inspect branch in
+// coverage_app.cpp), so each gets its own section with only the options that
+// actually apply to it, rather than one combined/misleading block.
+void print_full_help(std::ostream& out) {
+    out << CHEAT_SHEET
+        << "\n"
+        << "==================================================================\n"
+        << "BUILD MODE - cdx <input.gbz> [OPTIONS]\n"
+        << "==================================================================\n"
+        << cdx_builder::usage_text()
+        << "\n"
+        << "==================================================================\n"
+        << "COVERAGE MODE - cdx <index.cdx> <alignment.gam> [OPTIONS]\n"
+        << "==================================================================\n"
+        << cdx_coverage::coverage_usage_text()
+        << "\n"
+        << "==================================================================\n"
+        << "INSPECT MODE - cdx <index.cdx> [-q COMPONENT]\n"
+        << "==================================================================\n"
+        << "Give a lone CDX file (no GAM) to inspect its contents instead of\n"
+        << "computing coverage.\n\n"
+        << cdx_coverage::inspect_usage_text();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -124,8 +155,12 @@ int main(int argc, char** argv) {
     const std::vector<std::string> positionals = leading_positionals(argc, argv, 2);
 
     if (positionals.empty()) {
+        if (help_requested) {
+            print_full_help(std::cout);
+            return EXIT_SUCCESS;
+        }
         std::cerr << CHEAT_SHEET;
-        return help_requested ? EXIT_SUCCESS : EXIT_FAILURE;
+        return EXIT_FAILURE;
     }
 
     const cdx_toolkit::InputType type1 = detect(positionals[0], help_requested);

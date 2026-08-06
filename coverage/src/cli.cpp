@@ -229,147 +229,247 @@ namespace {
 
         return value;
     }
+    /**
+     * @brief Raw/unbound storage for options that need post-parse translation
+     *        (string -> enum, string -> color, "auto" -> resolved thread
+     *        count, ...) before landing in CliArgs. Kept alive by the caller
+     *        (parse_args() or usage_text()) for as long as the CLI::App
+     *        built around it is alive, since add_option() binds by pointer.
+     */
+    struct RawInputs {
+        std::string query_raw;
+        std::string comp_type_raw;
+        std::string coverage_precision_raw;
+        std::string worker_threads_arg = "auto";
+        std::string decompression_threads_arg = "auto";
+        int log_base_val = 10;
+        CLI::Option *opt_log = nullptr;
+        std::string fig_size_raw;
+        std::string line_color_raw;
+        std::string fill_color_raw;
+    };
+
+    /**
+     * @brief Selects which flavor of the App build_app() produces.
+     *
+     * Coverage mode and inspect mode are functionally distinct - inspect
+     * mode (see cdx_coverage::run() in coverage_app.cpp) only ever reads the
+     * "cdx" positional and -q/--query's component, then calls
+     * cdx::inspectComponent() and returns; every other option (component
+     * type, coverage precision, threads, output selection, graph rendering)
+     * is silently irrelevant in that path. Showing all of them under a
+     * single "inspect" help block would be misleading, so build_app() can
+     * produce three different Apps depending on the caller's needs:
+     *
+     *   - Runtime: what parse_args() actually parses argv against. Both
+     *     modes are dispatched from this single App at runtime (GAM
+     *     positional optional; its absence is what selects inspect mode -
+     *     see CliArgs::inspectMode()), so this must keep accepting every
+     *     option regardless of which mode ends up running.
+     *   - CoverageDisplay / InspectDisplay: two purely cosmetic Apps built
+     *     only to produce accurate, mode-scoped --help text (see
+     *     coverage_usage_text()/inspect_usage_text() below) - never parsed.
+     */
+    enum class BuildMode { Runtime, CoverageDisplay, InspectDisplay };
+
+    /**
+     * @brief Builds (but does not parse) the CLI11 application. Shared by
+     *        parse_args() (real run, always BuildMode::Runtime) and the
+     *        display-only usage_text() helpers (help-text generation only,
+     *        no parsing) below.
+     *
+     * @param args Destination struct; option bindings write directly into it
+     *        once app->parse() is called by the caller (untouched otherwise).
+     * @param raw Storage for options requiring post-parse translation (see
+     *        RawInputs above); the caller reads it back after parsing.
+     * @param mode Which variant to build - see BuildMode above.
+     * @return Heap-allocated App (CLI::App has a deleted copy constructor,
+     *         so a unique_ptr is used rather than returning by value).
+     */
+    std::unique_ptr<CLI::App> build_app(CliArgs &args, RawInputs &raw, BuildMode mode = BuildMode::Runtime) {
+        const bool is_inspect_display = (mode == BuildMode::InspectDisplay);
+
+        auto app = std::make_unique<CLI::App>(
+            is_inspect_display
+                ? "Inspect the contents of a CDX index: list its components, "
+                  "or show the details of a single one."
+                : "Calculate per-node coverage from a GAM file using a CDX index."
+        );
+
+        switch (mode) {
+            case BuildMode::Runtime:
+                app->usage("cdx_coverage <CDX> [GAM] [OPTIONS]");
+                break;
+            case BuildMode::CoverageDisplay:
+                app->usage("cdx_coverage <CDX> <GAM> [OPTIONS]");
+                break;
+            case BuildMode::InspectDisplay:
+                app->usage("cdx_coverage <CDX> [-q COMPONENT]");
+                break;
+        }
+
+        // ============================================================
+        // 1. POSITIONAL INPUT FILES
+        // ============================================================
+        // CDX file is mandatory and must exist on disk
+        app->add_option("cdx", args.cdx_file, "Path to the binary CDX graph index.")
+                ->required()
+                ->check(CLI::ExistingFile);
+
+        if (mode != BuildMode::InspectDisplay) {
+            // Runtime: GAM is optional - omitting it switches to inspect mode
+            // (see CliArgs::inspectMode()). CoverageDisplay: shown as
+            // required, since a display-only App scoped to coverage mode
+            // always needs one.
+            auto *opt_gam = app->add_option(
+                "gam", args.gam_file,
+                mode == BuildMode::CoverageDisplay
+                    ? "Path to the GAM alignment file."
+                    : "Path to the GAM alignment file.\n"
+                      "Omit it to inspect the CDX index instead of computing coverage."
+            )->check(CLI::ExistingFile);
+
+            if (mode == BuildMode::CoverageDisplay) {
+                opt_gam->required();
+            }
+        }
+
+        // ============================================================
+        // 2. QUERY SELECTION
+        // ============================================================
+        if (is_inspect_display) {
+            // Inspect mode only ever uses -q/--query to pick which single
+            // component to display; there is no coverage-related meaning
+            // here (no range, no component-type, no precision, ...).
+            app->add_option(
+                "-q,--query",
+                raw.query_raw,
+                "Name or ComponentID of a single component to display.\n"
+                "Examples: -q chr1, -q 0.\n"
+                "Omit to list every component in the index instead."
+            );
+            return app;
+        }
+
+        auto *group_query = app->add_option_group("QUERY");
+
+        group_query->add_option(
+            "-q,--query",
+            raw.query_raw,
+            mode == BuildMode::CoverageDisplay
+                ? "Scope of the coverage calculation (0-based coordinates).\n"
+                  "Formats: COMPONENT or 'COMPONENT START:END' (accepts name or ComponentID)\n"
+                  "Examples: -q chr1, -q 0, -q \"chr1 1000:5000\"\n"
+                  "Restricts the calculation to a single component or subregion."
+                : "Scope of the coverage calculation (0-based coordinates).\n"
+                  "Formats: COMPONENT or 'COMPONENT START:END' (accepts name or ComponentID)\n"
+                  "Examples: -q chr1, -q 0, -q \"chr1 1000:5000\"\n"
+                  "In inspect mode (no GAM given), only COMPONENT is used to select\n"
+                  "which single component to display; any START:END range is ignored."
+        );
+
+        group_query->add_option(
+            "-c,--component-type",
+            raw.comp_type_raw,
+            "Graph coordinate mapping structure:\n"
+            "'linear'/'l' or 'circular'/'c'.\n"
+            "Default: linear."
+        );
+
+        group_query->add_option(
+            "-p,--coverage-precision",
+            raw.coverage_precision_raw,
+            "How precisely to compute coverage:\n"
+            "'base'/'b' = per base pair (accurate, default).\n"
+            "'node'/'n' = per whole node (faster, uses less memory).\n"
+            "Use 'node' for very large or deep GAM files.\n"
+            "Default: base."
+        );
+
+        // ============================================================
+        // 3. PERFORMANCE / THREADS GROUP
+        // ============================================================
+        app->add_option(
+            "-t,--worker-threads",
+            raw.worker_threads_arg,
+            "Number of threads used for computation (positive integer or 'auto').\n"
+            "Default: half the machine threads."
+        );
+
+        app->add_option(
+            "-T,--decompression-threads",
+            raw.decompression_threads_arg,
+            "Number of threads used for decompression of the GAM file (positive integer or 'auto').\n "
+            "Default: half the machine threads"
+        );
+
+        // ============================================================
+        // 4. OUTPUT CONFIGURATION GROUP
+        // ============================================================
+        auto *group_output = app->add_option_group("OUTPUT");
+
+        group_output->add_option("-o,--output", args.output_directory, "Directory to save output files. Default: '.'");
+        group_output->add_flag("--no-graph", args.no_graph, "Skip coverage graph generation.");
+        group_output->add_flag("--no-stats", args.no_stats, "Skip writing summary statistics file.");
+        group_output->add_flag("--no-table", args.no_table, "Skip writing per-node TSV table file.");
+
+        // ============================================================
+        // 5. GRAPH RENDERING OPTIONS
+        // ============================================================
+        auto *group_graph = app->add_option_group("GRAPH");
+
+        // Optional value flag: Defaults to base 10 if flag is present without an explicit integer
+        raw.opt_log = group_graph->add_option(
+            "--log", raw.log_base_val, "Use logarithmic coverage scale. Base defaults to 10 if omitted."
+        )->type_size(0, 1)->check(CLI::Range(2, 10000))->default_str("10");
+
+        group_graph->add_option(
+                    "--smoothing",
+                    args.smoothing,
+                    "Moving-average window fraction [0.0, 1.0].\n"
+                    "Default: 0.01.")
+                ->check(CLI::Range(0.0, 1.0));
+
+        group_graph->add_option(
+            "--max-point,--max-points",
+            args.max_plot_points,
+            "Maximum points passed to plotting backend.\n"
+            "Use 0 to disable downsampling and plot at full resolution.\n"
+            "Default: 10000.");
+
+        group_graph->add_option(
+                    "--dpi",
+                    args.dpi,
+                    "Output graph resolution in DPI.\n"
+                    "Default: 300.")
+                ->check(CLI::PositiveNumber);
+
+        group_graph->add_option(
+            "--fig-size",
+            raw.fig_size_raw,
+            "Figure dimensions in inches (WIDTHxHEIGHT), e.g., '7x4.5'.");
+
+        group_graph->add_option(
+            "--color-line",
+            raw.line_color_raw,
+            "Hexadecimal color for coverage line.\n"
+            "Default: #1E3A8A.");
+
+        group_graph->add_option(
+            "--color-filling",
+            raw.fill_color_raw,
+            "Hexadecimal color for coverage fill.\n"
+            "Default: #93C5FD.");
+
+        return app;
+    }
 } // namespace anonyme
 
 // @brief Parses command-line options and validates inputs using CLI11.
 CliArgs parse_args(const int argc, char **argv) {
     CliArgs args;
-
-    // Initialize CLI11 application with description and custom usage format
-    CLI::App app{"Calculate per-node coverage from a GAM file using a CDX index."};
-    app.usage("cdx_coverage <CDX> [GAM] [OPTIONS]");
-
-    // ============================================================
-    // 1. POSITIONAL INPUT FILES
-    // ============================================================
-    // CDX file is mandatory and must exist on disk
-    app.add_option("cdx", args.cdx_file, "Path to the binary CDX graph index.")
-            ->required()
-            ->check(CLI::ExistingFile);
-
-    // GAM file is optional: omitting it switches to inspect mode (display
-    // CDX contents and exit, see -q/--query below to target one component).
-    app.add_option("gam", args.gam_file, "Path to the GAM alignment file.\n"
-        "Omit it to inspect the CDX index instead of computing coverage.")
-            ->check(CLI::ExistingFile);
-
-    // ============================================================
-    // 2. QUERY SELECTION GROUP
-    // ============================================================
-    auto *group_query = app.add_option_group("QUERY");
-
-    std::string query_raw;
-    group_query->add_option(
-        "-q,--query",
-        query_raw,
-        "Scope of the coverage calculation (0-based coordinates).\n"
-        "Formats: COMPONENT or 'COMPONENT START:END' (accepts name or ComponentID)\n"
-        "Examples: -q chr1, -q 0, -q \"chr1 1000:5000\"\n"
-        "In inspect mode (no GAM given), only COMPONENT is used to select\n"
-        "which single component to display; any START:END range is ignored."
-    );
-
-    std::string comp_type_raw;
-    group_query->add_option(
-        "-c,--component-type",
-        comp_type_raw,
-        "Graph coordinate mapping structure:\n"
-        "'linear'/'l' or 'circular'/'c'.\n"
-        "Default: linear."
-    );
-
-    std::string coverage_precision_raw;
-    group_query->add_option(
-        "-p,--coverage-precision",
-        coverage_precision_raw,
-        "How precisely to compute coverage:\n"
-        "'base'/'b' = per base pair (accurate, default).\n"
-        "'node'/'n' = per whole node (faster, uses less memory).\n"
-        "Use 'node' for very large or deep GAM files.\n"
-        "Default: base."
-    );
-
-    // ============================================================
-    // 3. PERFORMANCE / THREADS GROUP
-    // ============================================================
-    std::string worker_threads_arg = "auto";
-    std::string decompression_threads_arg = "auto";
-
-    app.add_option(
-        "-t,--worker-threads",
-        worker_threads_arg,
-        "Number of threads used for computation (positive integer or 'auto').\n"
-        "Default: half the machine threads."
-    );
-
-    app.add_option(
-        "-T,--decompression-threads",
-        decompression_threads_arg,
-        "Number of threads used for decompression of the GAM file (positive integer or 'auto').\n "
-        "Default: half the machine threads"
-    );
-
-    // ============================================================
-    // 4. OUTPUT CONFIGURATION GROUP
-    // ============================================================
-    auto *group_output = app.add_option_group("OUTPUT");
-
-    group_output->add_option("-o,--output", args.output_directory, "Directory to save output files. Default: '.'");
-    group_output->add_flag("--no-graph", args.no_graph, "Skip coverage graph generation.");
-    group_output->add_flag("--no-stats", args.no_stats, "Skip writing summary statistics file.");
-    group_output->add_flag("--no-table", args.no_table, "Skip writing per-node TSV table file.");
-
-    // ============================================================
-    // 5. GRAPH RENDERING OPTIONS
-    // ============================================================
-    auto *group_graph = app.add_option_group("GRAPH");
-
-    int log_base_val = 10;
-    // Optional value flag: Defaults to base 10 if flag is present without an explicit integer
-    auto *opt_log = group_graph->add_option(
-        "--log", log_base_val, "Use logarithmic coverage scale. Base defaults to 10 if omitted."
-    )->type_size(0, 1)->check(CLI::Range(2, 10000))->default_str("10");
-
-    group_graph->add_option(
-                "--smoothing",
-                args.smoothing,
-                "Moving-average window fraction [0.0, 1.0].\n"
-                "Default: 0.01.")
-            ->check(CLI::Range(0.0, 1.0));
-
-    group_graph->add_option(
-        "--max-point,--max-points",
-        args.max_plot_points,
-        "Maximum points passed to plotting backend.\n"
-        "Use 0 to disable downsampling and plot at full resolution.\n"
-        "Default: 10000.");
-
-    group_graph->add_option(
-                "--dpi",
-                args.dpi,
-                "Output graph resolution in DPI.\n"
-                "Default: 300.")
-            ->check(CLI::PositiveNumber);
-
-    std::string fig_size_raw;
-    group_graph->add_option(
-        "--fig-size",
-        fig_size_raw,
-        "Figure dimensions in inches (WIDTHxHEIGHT), e.g., '7x4.5'.");
-
-    std::string line_color_raw;
-    group_graph->add_option(
-        "--color-line",
-        line_color_raw,
-        "Hexadecimal color for coverage line.\n"
-        "Default: #1E3A8A.");
-
-    std::string fill_color_raw;
-    group_graph->add_option(
-        "--color-filling",
-        fill_color_raw,
-        "Hexadecimal color for coverage fill.\n"
-        "Default: #93C5FD.");
+    RawInputs raw;
+    const std::unique_ptr<CLI::App> app = build_app(args, raw);
 
     // Parse raw CLI inputs; CLI11 automatically prints error/help/version text
     // via app.exit(). A zero exit code means --help/--version was requested,
@@ -380,9 +480,9 @@ CliArgs parse_args(const int argc, char **argv) {
     // other validation error below (and so parse_args stays testable without
     // forking a subprocess).
     try {
-        app.parse(argc, argv);
+        app->parse(argc, argv);
     } catch (const CLI::ParseError &e) {
-        const int exit_code = app.exit(e);
+        const int exit_code = app->exit(e);
         if (exit_code == 0) {
             std::exit(exit_code);
         }
@@ -408,10 +508,10 @@ CliArgs parse_args(const int argc, char **argv) {
 
     try {
         // Resolve worker thread count
-        if (worker_threads_arg == "auto") {
+        if (raw.worker_threads_arg == "auto") {
             args.worker_threads = machine_threads;
         } else {
-            const int requested = std::stoi(worker_threads_arg);
+            const int requested = std::stoi(raw.worker_threads_arg);
             if (requested <= 0) {
                 throw std::invalid_argument("Worker threads must be positive or 'auto'.");
             }
@@ -420,10 +520,10 @@ CliArgs parse_args(const int argc, char **argv) {
         }
 
         // Resolve decompression thread count (defaults to half of hardware threads)
-        if (decompression_threads_arg == "auto") {
+        if (raw.decompression_threads_arg == "auto") {
             args.decompression_threads = std::max(1, machine_threads / 2);
         } else {
-            const int requested = std::stoi(decompression_threads_arg);
+            const int requested = std::stoi(raw.decompression_threads_arg);
             if (requested <= 0) {
                 throw std::invalid_argument("Decompression threads must be positive or 'auto'.");
             }
@@ -435,9 +535,9 @@ CliArgs parse_args(const int argc, char **argv) {
     }
 
     // 3. Parse Custom Data Formats (Query, Component Type, Hex Colors)
-    if (!query_raw.empty()) {
+    if (!raw.query_raw.empty()) {
         try {
-            args.query = parse_query(query_raw);
+            args.query = parse_query(raw.query_raw);
         } catch (const std::exception &e) {
             throw std::runtime_error(std::string("Error parsing --query: ") + e.what());
         }
@@ -451,37 +551,37 @@ CliArgs parse_args(const int argc, char **argv) {
         }
     }
 
-    if (!comp_type_raw.empty()) {
+    if (!raw.comp_type_raw.empty()) {
         try {
-            args.component_type = parse_component_type(comp_type_raw);
+            args.component_type = parse_component_type(raw.comp_type_raw);
         } catch (const std::exception &e) {
             throw std::runtime_error(std::string("Error parsing --component-type: ") + e.what());
         }
     }
 
-    if (!coverage_precision_raw.empty()) {
+    if (!raw.coverage_precision_raw.empty()) {
         try {
-            args.coverage_precision = parse_coverage_precision(coverage_precision_raw);
+            args.coverage_precision = parse_coverage_precision(raw.coverage_precision_raw);
         } catch (const std::exception &e) {
             throw std::runtime_error(std::string("Error parsing --coverage-precision: ") + e.what());
         }
     }
 
-    if (*opt_log) {
-        args.log_base = log_base_val;
+    if (*raw.opt_log) {
+        args.log_base = raw.log_base_val;
     }
 
-    if (!line_color_raw.empty()) {
+    if (!raw.line_color_raw.empty()) {
         try {
-            args.line_color = parse_hex_color(line_color_raw);
+            args.line_color = parse_hex_color(raw.line_color_raw);
         } catch (const std::exception &e) {
             throw std::runtime_error(std::string("Error parsing --color-line: ") + e.what());
         }
     }
 
-    if (!fill_color_raw.empty()) {
+    if (!raw.fill_color_raw.empty()) {
         try {
-            args.fill_color = parse_hex_color(fill_color_raw);
+            args.fill_color = parse_hex_color(raw.fill_color_raw);
         } catch (const std::exception &e) {
             throw std::runtime_error(std::string("Error parsing --color-filling: ") + e.what());
         }
@@ -493,10 +593,10 @@ CliArgs parse_args(const int argc, char **argv) {
     }
 
     // 4. Determine Output Figure Dimensions
-    if (!fig_size_raw.empty()) {
+    if (!raw.fig_size_raw.empty()) {
         // Parse explicit user dimensions (e.g., "7x4.5")
         try {
-            args.custom_figure_size = parse_fig_size(fig_size_raw);
+            args.custom_figure_size = parse_fig_size(raw.fig_size_raw);
             args.figure_width = args.custom_figure_size->first;
             args.figure_height = args.custom_figure_size->second;
         } catch (const std::exception &e) {
@@ -523,6 +623,30 @@ CliArgs parse_args(const int argc, char **argv) {
     }
 
     return args;
+}
+
+std::string coverage_usage_text() {
+    // Builds a display-only App scoped to coverage mode (GAM required) and
+    // returns CLI11's own formatted help text - never parsed, no side
+    // effects, no argv needed. Used by the merged "cdx" dispatcher to print
+    // this branch's coverage-mode option list as part of its own top-level
+    // --help (see ../../src/main.cpp).
+    CliArgs args;
+    RawInputs raw;
+    const std::unique_ptr<CLI::App> app = build_app(args, raw, BuildMode::CoverageDisplay);
+    return app->help();
+}
+
+std::string inspect_usage_text() {
+    // Same idea as coverage_usage_text(), but scoped to inspect mode: only
+    // the "cdx" positional and -q/--query's component selection actually do
+    // anything in that path (see cdx_coverage::run()'s inspect branch in
+    // coverage_app.cpp), so this is a genuinely smaller option list, not
+    // just a relabeled copy of the coverage one.
+    CliArgs args;
+    RawInputs raw;
+    const std::unique_ptr<CLI::App> app = build_app(args, raw, BuildMode::InspectDisplay);
+    return app->help();
 }
 
 } // namespace cdx_coverage

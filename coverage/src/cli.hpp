@@ -132,6 +132,34 @@ struct CliArgs {
  */
 CliArgs parse_args(int argc, char** argv);
 
+/**
+ * @brief Returns coverage mode's CLI11-formatted help text (option list,
+ *        usage line, descriptions) without parsing anything and without
+ *        exiting the process. Scoped to coverage mode specifically (GAM
+ *        file required) - see inspect_usage_text() for the separate,
+ *        smaller inspect-mode option list.
+ *
+ * Used by the merged "cdx" toolkit executable to print this branch's
+ * coverage-mode option list as part of its own top-level `cdx --help`
+ * (invoked with no input file) - see cdx's src/main.cpp.
+ *
+ * @return The text CLI11 would print for `cdx_coverage <CDX> <GAM> --help`.
+ */
+std::string coverage_usage_text();
+
+/**
+ * @brief Returns inspect mode's CLI11-formatted help text, analogous to
+ *        coverage_usage_text() above but scoped to inspect mode: only the
+ *        "cdx" positional and -q/--query's component selection actually do
+ *        anything in that path (see cdx_coverage::run()'s inspect branch in
+ *        coverage_app.cpp), so this is a genuinely smaller option list, not
+ *        a relabeled copy of coverage_usage_text().
+ *
+ * @return The text CLI11 would print for `cdx_coverage <CDX> --help` when
+ *         no GAM file is given.
+ */
+std::string inspect_usage_text();
+
 } // namespace cdx_coverage
 
 #endif // CDX_COVERAGE_CLI_HPP
