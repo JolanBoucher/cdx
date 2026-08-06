@@ -11,15 +11,19 @@
 # Usage (from a fresh ubuntu:20.04 box, run as root or with sudo):
 #   ./scripts/test_ubuntu20.sh
 #
-# Known compatibility risk (see coverage/CMakeLists.txt's
-# `find_package(absl REQUIRED)`): Ubuntu 20.04's default repos do not ship
-# libabsl-dev (Abseil packaging for Debian/Ubuntu only starts around
-# Ubuntu 22.04/jammy). That find_package() call was written assuming a
-# Homebrew-provided modern Protobuf+Abseil pair (as on the developer's
-# Mac) and will very likely FAIL here with stock apt packages. This script
-# does not try to paper over that - it installs everything else and lets
-# cmake configure fail there if it's going to, so the real gap is visible
-# instead of silently patched away.
+# Known compatibility risks, both left visible rather than silently patched:
+#
+#   1. builder/cmake/CompilerRequirements.cmake requires GCC/G++ >= 11
+#      (C++17 features it relies on). Ubuntu 20.04's default GCC is 9.4.0,
+#      so this script pulls GCC 11 from the ubuntu-toolchain-r/test PPA and
+#      points cmake at it explicitly (-DCMAKE_C_COMPILER / -DCMAKE_CXX_COMPILER).
+#
+#   2. coverage/CMakeLists.txt's `find_package(absl REQUIRED)`: Ubuntu
+#      20.04's default repos do not ship libabsl-dev (Abseil packaging for
+#      Debian/Ubuntu only starts around Ubuntu 22.04/jammy). That call was
+#      written assuming a Homebrew-provided modern Protobuf+Abseil pair (as
+#      on the developer's Mac) and may still fail here even after installing
+#      everything else below - if so, that failure IS the test result.
 
 set -euo pipefail
 
@@ -34,13 +38,17 @@ export DEBIAN_FRONTEND=noninteractive
 echo "==> apt-get update"
 apt-get update -qq
 
-echo "==> Enabling universe (needed for libhts-dev) and installing packages"
+echo "==> Enabling universe (needed for libhts-dev) and toolchain PPA (needed for GCC 11)"
 apt-get install -y -qq software-properties-common ca-certificates
 add-apt-repository -y universe >/dev/null
+add-apt-repository -y ppa:ubuntu-toolchain-r/test >/dev/null
 apt-get update -qq
 
+echo "==> Installing packages"
 apt-get install -y -qq \
     build-essential \
+    gcc-11 \
+    g++-11 \
     cmake \
     git \
     pkg-config \
@@ -66,8 +74,11 @@ else
     echo "    fail below - that failure IS the test result, not a script bug."
 fi
 
-echo "==> Configuring (cmake)"
-cmake -S "${REPO_ROOT}" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release
+echo "==> Configuring (cmake, forcing GCC 11 as CMAKE_C/CXX_COMPILER)"
+cmake -S "${REPO_ROOT}" -B "${BUILD_DIR}" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=gcc-11 \
+    -DCMAKE_CXX_COMPILER=g++-11
 
 echo "==> Building"
 cmake --build "${BUILD_DIR}" -j"$(nproc)"
