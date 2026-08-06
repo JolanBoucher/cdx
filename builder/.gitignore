@@ -1,0 +1,29 @@
+# CMake build directories
+cmake-build-debug/
+cmake-build-release/
+build/
+build-linux/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Binaries / Executables
+cdx_builder
+*.o
+*.a
+*.so
+
+# gbz test file
+*.gbz
+*.cdx
+*.zst
+*.tsv
+
+# Other
+token.txt
+
+.DS_Store
+**/.DS_Store

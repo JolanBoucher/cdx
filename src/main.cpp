@@ -103,6 +103,20 @@ cdx_toolkit::InputType detect(const std::string& path, bool help_requested) {
     return cdx_toolkit::InputType::Unknown;
 }
 
+// Builds a precise diagnostic for a path that didn't resolve to a known
+// type: tells apart "the path is wrong" (most common in practice - relative
+// paths resolved against the wrong working directory) from "the file opened
+// fine but isn't a recognized CDX/GBZ file", which sniff_file() alone can't
+// distinguish (both collapse to InputType::Unknown).
+std::string describe_problem(const std::string& path) {
+    if (!cdx_toolkit::file_is_openable(path)) {
+        return "could not open '" + path + "' - check the path (relative paths are "
+               "resolved from the current working directory).";
+    }
+    return "'" + path + "' was opened but its content is neither a valid "
+           ".gbz file nor a valid .cdx file.";
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -123,22 +137,22 @@ int main(int argc, char** argv) {
             case cdx_toolkit::InputType::Cdx:
                 return cdx_coverage::run(argc, argv);
             default:
-                std::cerr << "[ERROR] '" << positionals[0]
-                          << "' is neither a valid .gbz file nor a valid .cdx file.\n\n"
+                std::cerr << "[ERROR] " << describe_problem(positionals[0]) << "\n\n"
                           << CHEAT_SHEET;
                 return EXIT_FAILURE;
         }
     }
 
-    // Two (or more) leading files: only CDX followed by GAM is a valid
-    // combination.
+    // Two (or more) leading files: only CDX followed by GAM is a valid combination.
     const cdx_toolkit::InputType type2 = detect(positionals[1], help_requested);
 
     if (type1 == cdx_toolkit::InputType::Cdx && type2 == cdx_toolkit::InputType::Gam) {
         return cdx_coverage::run(argc, argv);
     }
 
-    std::cerr << "[ERROR] With two files, the expected order is: index.cdx then alignment.gam.\n\n"
+    const std::string& problem_path = (type1 != cdx_toolkit::InputType::Cdx) ? positionals[0] : positionals[1];
+    std::cerr << "[ERROR] " << describe_problem(problem_path)
+              << " With two files, the expected order is: index.cdx then alignment.gam.\n\n"
               << CHEAT_SHEET;
     return EXIT_FAILURE;
 }

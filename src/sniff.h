@@ -54,6 +54,19 @@ InputType sniff_file(const std::string& path);
  */
 InputType guess_type_from_extension(const std::string& path);
 
+/**
+ * @brief Checks whether `path` can be opened for reading at all.
+ *
+ * Used to tell apart, in error messages, "the path is wrong / the file
+ * doesn't exist" from "the file exists but isn't a recognized CDX/GBZ/GAM
+ * file" - sniff_file() alone collapses both cases to InputType::Unknown,
+ * which is fine for dispatch but unhelpful for diagnostics.
+ *
+ * @param path Path to check.
+ * @return true if the file can be opened for reading, false otherwise.
+ */
+bool file_is_openable(const std::string& path);
+
 } // namespace cdx_toolkit
 
 #endif // CDX_TOOLKIT_SNIFF_H

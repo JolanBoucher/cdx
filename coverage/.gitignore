@@ -1,11 +1,14 @@
 # ==============================================================================
 # OS Generated Files
 # ==============================================================================
+# macOS
 .DS_Store
 .DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
+ehthumbs.db
+Thumbs.db
 
 # ==============================================================================
 # IDE & Editor Directories (CLion / JetBrains)
@@ -16,7 +19,10 @@
 # ==============================================================================
 # Build Directories & CMake Output
 # ==============================================================================
+# CLion default build directories
 cmake-build-*/
+
+# General CMake build directories
 build/
 Build/
 CMakeFiles/
@@ -29,21 +35,43 @@ CTestTestfile.cmake
 Testing/
 .cache/
 
+# Package manager build outputs
+vcpkg_installed/
+
 # ==============================================================================
 # Binary & Compiled Artifacts
 # ==============================================================================
+# Executables & App bundles
+*.exe
+*.out
+*.app
+cdx_coverage
+
+# Object & Header files
 *.o
 *.obj
+*.lo
+*.slo
+*.gch
+*.pch
+*.d
+
+# Libraries & Linker outputs
 *.a
+*.lib
 *.so
 *.so.*
 *.dylib
 *.dll
-/cdx
+*.lai
+*.la
+*.ilk
+*.pdb
+*.dwo
 
-# Bundled Python venv auto-provisioned for circular graphs (see CMakeLists.txt)
-pyenv/
-circular_plot.py
+# Fortran
+*.mod
+*.smod
 
 # ==============================================================================
 # Project-Specific Genomic / Data Files
@@ -62,19 +90,7 @@ circular_plot.py
 *~
 
 # ==============================================================================
-# cdx run output (default filenames written by the coverage branch)
+# Local test/run artifacts
 # ==============================================================================
-/coverage_graph.png
-/coverage_profile.tsv
-/coverage_stats.txt
 __pycache__/
 output/
-
-# ==============================================================================
-# Third-party dependencies auto-fetched by CMake (FetchContent/ExternalProject)
-# ==============================================================================
-# CLI11, libbdsg, gbwt, gbwtgraph, sdsl-lite (builder/deps/) and libvgio
-# (coverage/deps/) are downloaded automatically by `cmake configure`, pinned
-# to an exact commit in each branch's CMakeLists.txt - never committed here.
-builder/deps/
-coverage/deps/

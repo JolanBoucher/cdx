@@ -1,0 +1,137 @@
+#ifndef CDX_COVERAGE_CLI_HPP
+#define CDX_COVERAGE_CLI_HPP
+
+#include "coverage_precision.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <utility>
+
+// Everything below lives in namespace cdx_coverage specifically so that
+// `CliArgs`/`parse_args`/etc. cannot collide with the identically-named
+// (but semantically different) declarations in builder/src/cli.hpp: both
+// cdx_builder_core and cdx_coverage_core get statically linked into the
+// single merged "cdx" executable (see ../../CMakeLists.txt), and without
+// this namespace, un-namespaced global symbols with the same signature in
+// two different static libraries silently collide at link time - the
+// linker keeps whichever definition it pulls in first and simply never
+// links the other object file in, no error, no warning. That's a real bug
+// this project hit: the coverage branch ended up silently calling the
+// builder branch's parse_args().
+namespace cdx_coverage {
+
+struct QueryRange {
+    std::int64_t start;
+    std::int64_t end;
+};
+
+struct QuerySelection {
+    std::string component; // Contient soit le nom ("chr1"), soit l'ID numérique ("0")
+    std::optional<QueryRange> range;
+};
+
+enum class ComponentType {
+    Linear,
+    Circular
+};
+
+struct InspectOptions {
+    // Implicit: true whenever the GAM positional is omitted (a lone CDX
+    // file was given). There is no dedicated -i/--inspect flag anymore -
+    // see parse_args() in cli.cpp.
+    bool enabled = false;
+    std::optional<std::string> component; // Depuis -q/--query: nom ou ID ("chr1" ou "0")
+};
+
+struct CliArgs {
+    // Positional input files
+    std::string cdx_file;
+    std::string gam_file;
+
+    // Component Query Selection
+    std::optional<QuerySelection> query;
+    ComponentType component_type = ComponentType::Linear;
+
+    // Coverage computation granularity. Defaults to Base (full base-pair
+    // precision, including deletion/soft-clip corrections) since that is
+    // the more accurate result; -p/--coverage-precision node opts back into
+    // the cheaper, node-only behaviour for memory-constrained machines or
+    // very large/deep GAM files. See coverage_precision.h for the tradeoff.
+    CoveragePrecision coverage_precision = CoveragePrecision::Base;
+
+    // CDX Inspection Mode
+    InspectOptions inspect;
+
+    // threads configuration
+    int worker_threads;
+    int decompression_threads;
+
+    // Output Configuration
+    std::string output_directory = ".";
+    bool no_graph = false;
+    bool no_stats = false;
+    bool no_table = false;
+
+    // Graph Rendering Options
+    std::optional<int> log_base;
+    double smoothing = 0.01;
+    std::size_t max_plot_points = 10000;
+    int dpi = 300;
+    std::optional<std::pair<double, double>> custom_figure_size;
+
+    // Computed figure dimensions
+    double figure_width = 5.5;
+    double figure_height = 3.5;
+
+    std::string line_color = "#1E3A8A";
+    std::string fill_color = "#93C5FD";
+
+    // --- Helpers ---
+
+    [[nodiscard]] bool inspectMode() const noexcept {
+        return inspect.enabled;
+    }
+
+    [[nodiscard]] bool generateGraph() const noexcept {
+        return !no_graph;
+    }
+
+    [[nodiscard]] bool generateStats() const noexcept {
+        return !no_stats;
+    }
+
+    [[nodiscard]] bool generateTable() const noexcept {
+        return !no_table;
+    }
+};
+
+/**
+ * @brief Parses and validates command-line arguments for the coverage tool.
+ *
+ * Configures CLI11 options, positional arguments, option groups, and validation
+ * rules for calculating GAM coverage using a CDX index. Handles thread auto-scaling,
+ * component query parsing, logging parameters, and dynamic figure dimensions.
+ *
+ * Inspection mode is implicit: if only the CDX positional is supplied (no GAM
+ * file), `args.inspect.enabled` is set automatically - there is no dedicated
+ * -i/--inspect flag. The component to inspect, if any, is taken from
+ * -q/--query (its optional range is ignored in inspect mode).
+ *
+ * @param argc Count of command-line arguments.
+ * @param argv Array of command-line argument strings.
+ * @return CliArgs Populated and validated argument structure ready for program execution.
+ *
+ * @throws std::runtime_error If argument parsing or post-parse validation fails for any reason
+ *         (malformed/missing/out-of-range option values, all outputs disabled, etc.). The
+ *         exception message is ready to display to the user as-is.
+ *
+ * @note `--help`/`--version` are handled by calling std::exit(0) directly after printing their
+ *       text (CLI11's own behavior) - they are not reported as errors and do not throw.
+ */
+CliArgs parse_args(int argc, char** argv);
+
+} // namespace cdx_coverage
+
+#endif // CDX_COVERAGE_CLI_HPP

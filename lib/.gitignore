@@ -1,0 +1,20 @@
+# CMake build directories
+cmake-build-debug/
+cmake-build-release/
+build/
+build-linux/
+build-macos/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Binaries / static libs
+*.o
+*.a
+*.so
+
+.DS_Store
+**/.DS_Store

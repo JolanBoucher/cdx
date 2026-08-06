@@ -62,6 +62,11 @@ InputType sniff_file(const std::string& path) {
     return InputType::Unknown;
 }
 
+bool file_is_openable(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    return static_cast<bool>(in);
+}
+
 InputType guess_type_from_extension(const std::string& path) {
     const std::string lower = to_lower(path);
 
