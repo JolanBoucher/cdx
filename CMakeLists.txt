@@ -45,31 +45,46 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # Each of builder/ and coverage/ still also produces its own standalone
 # executable (cdx_builder / cdx_coverage) and its own unit test suite.
 #
-# Both test suites default to OFF here (unlike each branch's own standalone
-# default of ON) because of one remaining cross-branch dependency wrinkle:
-# builder/deps/libbdsg bundles an old sdsl-lite snapshot that unconditionally
-# vendors its own (old, alias-less) googletest copy. When both test suites
-# are enabled in the very same configure, builder's tests happily reuse
-# whatever `gtest`/`gtest_main` target already exists (they only ever need
-# the plain, non-namespaced names - see builder/cmake/FetchGoogleTest.cmake),
-# but coverage's tests need the newer `GTest::gtest_main` alias and will try
-# to fetch a second, separate googletest copy if that alias isn't already
-# there (see coverage/test/CMakeLists.txt) - which can still collide with
-# libbdsg's already-vendored plain `gtest` target (CMake/CMP0002).
+# Both test suites default to ON here, same as each branch's own standalone
+# default - all three suites (lib/builder/coverage) build together in this
+# one merged configure, share ONE GoogleTest build, and are all runnable
+# from a single CLion profile / `ctest` invocation. This relies on one
+# cross-branch bridge, right below add_subdirectory(builder): see the
+# comment there for the full story (short version: builder/deps/libbdsg
+# already vendors a modern, perfectly usable googletest v1.15.2 copy -
+# add_subdirectory()'d raw, so missing the namespaced `GTest::` alias
+# coverage's tests want - and this project adds that one missing alias
+# instead of letting coverage fetch + build a second, separate copy, which
+# is what used to collide with libbdsg's copy - CMake/CMP0002 - when both
+# suites were enabled together).
 #
-# The clean fix belongs in cdx_builder (e.g. isolate its googletest the same
-# out-of-tree way it already isolates sdsl-lite/GBWT/GBWTGraph via
-# ExternalProject_Add, instead of add_subdirectory), not something to
-# special-case here. Until then: build/test each branch from its own
-# focused configure when you need its suite (`cmake --build build --target
-# cdx_builder_test...` from inside builder/, or coverage/'s own `ctest`) -
-# both branches remain fully independently buildable/testable outside this
-# merged configure, exactly as before.
-set(CDX_BUILDER_BUILD_TESTS OFF CACHE BOOL "Build cdx_builder's own unit test suite")
-set(CDX_BUILD_TESTS OFF CACHE BOOL "Build cdx_coverage's own unit test suite")
+# Both remain fully independently buildable/testable outside this merged
+# configure too, exactly as before (`cmake -S builder -B ...`, `cmake -S
+# coverage -B ...`).
+set(CDX_BUILDER_BUILD_TESTS ON CACHE BOOL "Build cdx_builder's own unit test suite")
+set(CDX_BUILD_TESTS ON CACHE BOOL "Build cdx_coverage's own unit test suite")
 
 add_subdirectory(lib)
 add_subdirectory(builder)
+
+# Bridge builder/deps/libbdsg's vendored googletest (plain `gtest`/
+# `gtest_main` targets, defined unconditionally the moment libbdsg itself is
+# configured above - see builder/cmake/FetchGoogleTest.cmake) to the
+# namespaced `GTest::gtest`/`GTest::gtest_main` names coverage/test/'s suite
+# links against. Without this, coverage/test/CMakeLists.txt's own
+# `if(NOT TARGET GTest::gtest_main)` guard would find nothing and fetch a
+# second, separate googletest copy - which then collides with libbdsg's
+# already-vendored plain `gtest` target at CMake generation time
+# (add_library cannot create target 'gtest' twice: CMP0002). Both copies are
+# pinned to the exact same v1.15.2 release, so this is a genuine, safe reuse
+# of the same code, not a version downgrade/mismatch. Guarded so a
+# standalone `cmake -S builder ...` configure (CDX_BUILD_TESTS/coverage not
+# involved at all) doesn't try to alias a target that was never fetched.
+if(TARGET gtest AND NOT TARGET GTest::gtest_main)
+    add_library(GTest::gtest ALIAS gtest)
+    add_library(GTest::gtest_main ALIAS gtest_main)
+endif()
+
 add_subdirectory(coverage)
 
 # ---------------------------------------------------------------------------

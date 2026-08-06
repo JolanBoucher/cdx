@@ -9,13 +9,18 @@
 
 # GUARD: in the cdx monorepo, cdx_builder's own dependency chain
 # (builder/deps/libbdsg -> its bundled sdsl-lite -> a vendored googletest
-# snapshot) may already define plain `gtest`/`gtest_main` targets before
-# this file ever runs (see builder/cmake/FetchGoogleTest.cmake for the full
-# explanation). That vendored snapshot is old enough that it does NOT
-# provide the namespaced `GTest::gtest_main` alias every test executable
-# below links against, so the check here is specifically for that alias,
-# not just `gtest` - if it's missing, fetch our own modern googletest
-# regardless of what plain-named target(s) already exist.
+# snapshot, itself pinned to the very same v1.15.2 this file would otherwise
+# fetch) already defines plain `gtest`/`gtest_main` targets by the time this
+# file runs. It's add_subdirectory()'d raw though, so it never gets the
+# namespaced `GTest::gtest_main` alias every test executable below links
+# against - the top-level CMakeLists.txt bridges that gap right after
+# add_subdirectory(builder) (`add_library(GTest::gtest_main ALIAS
+# gtest_main)` etc.), so in the merged monorepo build this check below
+# almost always finds the alias already there and skips straight past this
+# fetch, reusing that single shared gtest build instead of compiling a
+# second, separate copy. Only a genuinely standalone `cmake -S coverage -B
+# ...` configure (outside the monorepo, no builder/libbdsg involved) still
+# needs this fetch for real.
 if(NOT TARGET GTest::gtest_main)
     include(FetchContent)
 
