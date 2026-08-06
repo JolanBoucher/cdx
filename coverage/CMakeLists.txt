@@ -181,7 +181,39 @@ FetchContent_Declare(
         SOURCE_DIR "${LIBVGIO_SOURCE_DIR}"
         BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/deps/libvgio"
 )
+
+# libvgio's own CMakeLists.txt unconditionally calls both
+# install(TARGETS vgio EXPORT vgio-targets ...) and, separately,
+# export(EXPORT vgio-targets ...) to write a build-tree package file. Neither
+# is needed here (we only build + link libvgio inside this project's own
+# tree, never install/export it as a redistributable CMake package), and
+# both fail at configure time specifically when the Abseil linked into it
+# came from our own FetchContent fallback above rather than a
+# system/Homebrew package: FetchContent-built Abseil targets aren't
+# IMPORTED, so they aren't "export-set safe". This only happens in the
+# absl_FOUND-false branch - when a real system Abseil was found (e.g.
+# Homebrew on macOS, whose IMPORTED targets are export-set safe), leave
+# install()/export() completely untouched, exactly as this already worked
+# before the FetchContent fallback existed. CMake auto-provides each
+# shadowed built-in as `_install`/`_export` so they can be restored
+# immediately after.
+if(NOT absl_FOUND)
+    function(install)
+    endfunction()
+    function(export)
+    endfunction()
+endif()
+
 FetchContent_MakeAvailable(libvgio)
+
+if(NOT absl_FOUND)
+    function(install)
+        _install(${ARGN})
+    endfunction()
+    function(export)
+        _export(${ARGN})
+    endfunction()
+endif()
 
 # Re-enable find_package(Protobuf) for the rest of your project
 set(CMAKE_DISABLE_FIND_PACKAGE_Protobuf FALSE)
