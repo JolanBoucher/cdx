@@ -1,6 +1,6 @@
 # cdx
 
-Single entry point for the CDX pangenome toolkit. One executable, mode picked
+Entry point for the CDX vgan tool. One executable, mode picked
 automatically from the input file(s) - no sub-command verbs to learn:
 
 ```
