@@ -119,7 +119,13 @@ echo "==> SUCCESS: cdx built and ran on this environment."
 if [ "${RUN_TESTS}" -eq 1 ]; then
     echo ""
     echo "==> -test passed: running all three unit test suites (lib + builder + coverage)"
-    ctest --test-dir "${BUILD_DIR}" --output-on-failure
+    # `ctest --test-dir` needs CMake >= 3.20; Ubuntu 20.04's apt cmake is
+    # 3.16.3 (no version pinned above), which silently ignores an
+    # unrecognized --test-dir and falls back to searching the current
+    # working directory instead - finding no CTestTestfile.cmake there and
+    # reporting "No tests were found!!!" without ever actually failing.
+    # `cd` into the build dir first instead: works on every CMake version.
+    (cd "${BUILD_DIR}" && ctest --output-on-failure)
     echo ""
     echo "==> SUCCESS: all three test suites ran on this environment."
 fi
