@@ -1,15 +1,17 @@
 # cdx_coverage
 
+## Overview
+
 A high-performance C++ tool for computing per-base sequencing coverage over
 a linearized pangenome graph, from a custom binary graph index (**CDX**)
-and read alignments in VG's **GAM** format.
+and read alignments in VG's **GAM** format. It also doubles as the CDX
+index's inspection tool: given a CDX file with no GAM alignment, it lists or
+describes the graph's indexed components instead of computing coverage.
 
 `cdx_coverage` is designed for large pangenome graphs: coverage extraction,
 projection to genomic coordinates, and coverage-graph rendering all run
 in-process and are multi-threaded, with no dependency on the graph
 toolkit's own `vg` binary at runtime.
-
-## Overview
 
 Given a CDX index and a GAM alignment file built from the *same* pangenome
 graph, `cdx_coverage` computes, for every graph component (chromosome/
@@ -29,8 +31,12 @@ contig) or a user-selected sub-region:
 
 ## Features
 
-- **Two query modes**: whole-graph coverage (all components at once) or a
-  single component/sub-region (`-q/--query`), by name or numeric ID.
+- **Implicit inspect mode**: give just a CDX file (no GAM) to list all
+  components, or `-q/--query COMPONENT` to describe a single one - no
+  processing of alignments happens in this mode.
+- **Two query modes for coverage**: whole-graph coverage (all components at
+  once) or a single component/sub-region (`-q/--query`), by name or numeric
+  ID.
 - **Two plot styles**: linear tracks (`--component-type linear`, default)
   or circular genome plots (`--component-type circular`), each with a
   single-panel view for one component/region and a multi-panel grid view
@@ -46,171 +52,6 @@ contig) or a user-selected sub-region:
   memory-constrained machines or very large/deep GAM files.
 - **Linear or logarithmic coverage scale** (`--log`), configurable
   smoothing, downsampling, resolution, figure size, and colors.
-- **CDX inspection mode** (`-i/--inspect`) to list or describe graph
-  components without processing any alignments.
-
-## Requirements
-
-### Build-time dependencies
-
-- A C++17 compiler (GCC or Clang)
-- [CMake](https://cmake.org/) ≥ 3.16
-- [pkg-config](https://www.freedesktop.org/wiki/Software/pkg-config/)
-- [Protobuf](https://github.com/protocolbuffers/protobuf)
-- [HTSlib](https://github.com/samtools/htslib) ≥ 1.10
-- [Abseil](https://abseil.io/) (required by modern Protobuf)
-- OpenMP
-- POSIX threads
-- [Cairo](https://www.cairographics.org/) — in-process linear plot rendering
-- [CLI11](https://github.com/CLIUtils/CLI11) — command-line parsing
-  (single-header library; see [Installing dependencies](#installing-dependencies))
-- [libvgio](https://github.com/vgteam/libvgio) — built from the
-  `deps/libvgio` git submodule; deserializes GAM files and exposes the VG
-  Protobuf alignment types (`vg::Alignment`, `vg::Mapping`, `vg::Position`,
-  `vg::Edit`) that `cdx_coverage` reads
-- **`cdx_lib`** — a small companion library providing the CDX format types
-  and I/O, developed alongside `cdx_coverage`. It is fetched and built
-  automatically by `CMakeLists.txt` via CMake's `FetchContent` (tracking its
-  `main` branch) — no manual clone or sibling checkout needed; a working
-  internet connection at configure time is all that's required
-
-### Runtime-only dependency (circular graphs)
-
-Circular plots are rendered by a small Python script invoked as a
-subprocess (all coverage/smoothing/statistics computation still happens in
-C++; Python only handles the polar plot drawing via
-[pycirclize](https://github.com/moshi4/pyCirclize)). This is **not**
-required to build or run `cdx_coverage` with linear plots.
-
-By default, the build automatically provisions a private Python
-environment for this — see **[CIRCULAR_PLOT_SETUP.md](./python_script/CIRCULAR_PLOT_SETUP.md)**for details, manual setup, and troubleshooting.
-
-## Installing dependencies
-
-### Clone with submodules
-
-```bash
-git clone --recurse-submodules <repository-url> cdx_coverage
-cd cdx_coverage
-```
-
-If already cloned without `--recurse-submodules`:
-
-```bash
-git submodule update --init --recursive
-```
-
-`cdx_lib` is **not** a submodule of this repository either — it is fetched
-automatically by CMake itself the first time you configure the build (see
-[Building](#building) below), so no extra step is needed for it.
-
-### macOS (Apple Silicon or Intel, via Homebrew)
-
-```bash
-brew install cmake pkg-config protobuf abseil htslib libomp cairo cli11
-```
-
-### Ubuntu 20.04 or newer
-
-Ubuntu 20.04's default GCC (9.4) is old enough that a newer compiler is
-recommended, and its packaged Abseil is too old for the Logging symbols
-`cdx_coverage` needs (see below) — there's more moving parts here than on
-macOS/Homebrew, so **using the install script below is strongly
-recommended** over doing this by hand.
-
-#### Recommended: `scripts/install_ubuntu20.sh`
-
-This is the same script the CI workflow (`.github/workflows/ubuntu.yml`)
-runs on every commit, on both Ubuntu 20.04 and 24.04, so it's kept honest by
-that CI run rather than going stale. It installs every system package
-above, pulls in GCC 11 on 20.04 specifically (skipped automatically on
-newer releases where the default compiler is already new enough), builds
-and installs a modern Abseil from source, resolves CLI11, and initializes
-the `deps/libvgio` submodule — all idempotent, safe to re-run. Works
-whether run as a regular user (uses `sudo`) or as root (e.g. inside a
-minimal Docker container, where `sudo` usually isn't even installed).
-
-```bash
-git clone --recurse-submodules <repository-url> cdx_coverage
-cd cdx_coverage
-./scripts/install_ubuntu20.sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j"$(nproc)"
-./build/cdx_coverage --help
-```
-
-#### Manual installation
-
-If you'd rather not run the script — or need to customize a step — here is
-what it does, by hand:
-
-> **Abseil:** Ubuntu's packaged `libabsl-dev` predates Abseil's Logging
-> library (`absl::log_internal_message` / `absl::log_internal_check_op`,
-> added in the `20230802` LTS release), which `CMakeLists.txt` links
-> against. Do **not** rely on `libabsl-dev` from apt — build a recent
-> Abseil (`>= 20230802`) from source and install it instead (see
-> `.github/workflows/ubuntu.yml` for the exact commands used in CI), or
-> use a distro/PPA that ships one.
-
-```bash
-sudo apt update
-sudo apt install -y \
-    build-essential \
-    cmake \
-    git \
-    pkg-config \
-    protobuf-compiler \
-    libprotobuf-dev \
-    libhts-dev \
-    libomp-dev \
-    libcairo2-dev \
-    libjansson-dev \
-    zlib1g-dev
-```
-
-`libjansson-dev` is required by the `libvgio` submodule (not by
-`cdx_coverage` directly).
-
-Package availability for CLI11 and Abseil varies by Ubuntu release. If
-`libcli11-dev` isn't available in your repositories, install CLI11 as a
-single header instead:
-
-```bash
-mkdir -p include/CLI
-curl -L -o include/CLI/CLI.hpp \
-    https://github.com/CLIUtils/CLI11/releases/latest/download/CLI11.hpp
-```
-
-Building Abseil from source and initializing the `deps/libvgio` submodule
-are left as an exercise here — see `scripts/install_ubuntu20.sh` itself for
-the exact, tested commands (it's the single source of truth CI also runs,
-so it's guaranteed not to drift out of date the way a second copy of these
-instructions here would).
-
-## Building
-
-```bash
-cmake -B build -S .
-cmake --build build -j
-```
-
-The first configure needs a working internet connection: CMake's
-`FetchContent` fetches `cdx_lib` (and, unless `-DCDX_BUILD_TESTS=OFF` is
-passed, GoogleTest) automatically at that point. Subsequent configures
-re-check `cdx_lib`'s `main` branch for updates unless
-`-DFETCHCONTENT_UPDATES_DISCONNECTED=ON` is set.
-
-The compiled binary is `build/cdx_coverage`. If a Python 3 interpreter was
-found during configuration, a private virtual environment for circular
-graph rendering is also provisioned automatically next to it (best-effort,
-never fails the build — see
-[CIRCULAR_PLOT_SETUP.md](./python_script/CIRCULAR_PLOT_SETUP.md)).
-
-To install system-wide:
-
-```bash
-cmake --install build
-```
 
 ## Usage
 
@@ -218,29 +59,27 @@ cmake --install build
 cdx_coverage <CDX> [GAM] [OPTIONS]
 ```
 
-### Inspect a CDX index
+### Examples
 
-List all components in the index, without processing any alignments:
+Inspect a CDX index - list all components, without processing any alignments:
 
 ```bash
-cdx_coverage graph.cdx --inspect
+cdx_coverage graph.cdx
 ```
 
 Describe a single component:
 
 ```bash
-cdx_coverage graph.cdx --inspect chr1
+cdx_coverage graph.cdx -q chr1
 ```
 
-### Whole-graph coverage
-
-Compute coverage for every component and render a multi-panel grid plot:
+Whole-graph coverage - every component, multi-panel grid plot:
 
 ```bash
 cdx_coverage graph.cdx reads.gam -o results/
 ```
 
-### Single component or sub-region
+Single component or sub-region:
 
 ```bash
 # Entire component, by name or numeric ID
@@ -248,16 +87,16 @@ cdx_coverage graph.cdx reads.gam -q chr1 -o results/
 cdx_coverage graph.cdx reads.gam -q 0    -o results/
 
 # 0-based sub-region
-cdx_coverage graph.cdx reads.gam -q "chr1 1000-5000" -o results/
+cdx_coverage graph.cdx reads.gam -q "chr1 1000:5000" -o results/
 ```
 
-### Circular plots
+Circular plots:
 
 ```bash
 cdx_coverage graph.cdx reads.gam -q chr1 -c circular -o results/
 ```
 
-### Logarithmic scale, custom styling
+Logarithmic scale, custom styling:
 
 ```bash
 cdx_coverage graph.cdx reads.gam \
@@ -272,11 +111,10 @@ cdx_coverage graph.cdx reads.gam \
 | Option | Description |
 |---|---|
 | `<CDX>` | Path to the binary CDX graph index (required). |
-| `[GAM]` | Path to the GAM alignment file (required unless `-i/--inspect`). |
-| `-q, --query TEXT` | Scope the computation to one component: `COMPONENT` or `"COMPONENT START-END"` (0-based), by name or numeric ID. Omit to process the whole graph. |
+| `[GAM]` | Path to the GAM alignment file. Omit it to inspect the CDX index instead of computing coverage. |
+| `-q, --query TEXT` | Coverage mode: scope the computation to one component, `COMPONENT` or `"COMPONENT START:END"` (0-based), by name or numeric ID - omit to process the whole graph. Inspect mode (no GAM given): selects which single component to describe; any range is ignored. |
 | `-c, --component-type` | `linear`/`l` (default) or `circular`/`c`. |
 | `-p, --coverage-precision` | `base`/`b` (default): per-base-pair coverage, correcting deletions and read-boundary over-counting. `node`/`n`: cheaper whole-node resolution, recommended on memory-constrained machines or very large/deep GAM files. |
-| `-i, --inspect [COMPONENT]` | Print CDX index contents and exit; no value lists all components. |
 | `-o, --output PATH` | Output directory. Default: `.` |
 | `--no-graph` | Skip coverage graph generation. |
 | `--no-stats` | Skip the statistics report. |
@@ -291,18 +129,139 @@ cdx_coverage graph.cdx reads.gam \
 | `-t, --worker-threads N` | Threads used for computation. Default: `auto` (all cores). |
 | `-T, --decompression-threads N` | Threads used for GAM decompression. Default: `auto` (half the cores). |
 
-Run `cdx_coverage --help` for the authoritative, up-to-date list.
+Run `cdx_coverage --help` for the authoritative, up-to-date list (or, from
+the merged toolkit, `cdx <file.cdx> [file.gam] --help`).
 
 ## Output files
 
 Written to the directory given by `-o/--output` (unless disabled via
-`--no-table`/`--no-stats`/`--no-graph`):
+`--no-table`/`--no-stats`/`--no-graph`). Not produced in inspect mode (no
+GAM given) - that mode only prints to the terminal.
 
 | File | Description |
 |---|---|
 | `coverage_profile.tsv` | Per-base coverage table: `component_name`, `position`, `coverage`. |
 | `coverage_stats.txt` | Mapping statistics (total/mapped/unmapped reads) and coverage statistics (breadth, mean, median, standard deviation, quartiles, min/max) per component or for the queried region. |
 | `coverage_graph.png` | The rendered coverage plot (linear or circular, single panel or multi-panel grid, depending on the query and `-c/--component-type`). |
+
+## Requirements
+
+### Build-time dependencies
+
+- A C++17 compiler (GCC ≥ 11 or Clang)
+- [CMake](https://cmake.org/) ≥ 3.16
+- [pkg-config](https://www.freedesktop.org/wiki/Software/pkg-config/)
+- [Protobuf](https://github.com/protocolbuffers/protobuf)
+- [HTSlib](https://github.com/samtools/htslib) ≥ 1.10
+- [Abseil](https://abseil.io/) (required by `libvgio`'s Protobuf-based
+  logging) - resolved automatically, see below
+- OpenMP
+- POSIX threads
+- [Cairo](https://www.cairographics.org/) — in-process linear plot rendering
+- [CLI11](https://github.com/CLIUtils/CLI11) — command-line parsing
+  (see [Installing dependencies](#installing-dependencies) below)
+- [libvgio](https://github.com/vgteam/libvgio) — fetched and built
+  automatically via CMake's `FetchContent`; deserializes GAM files and
+  exposes the VG Protobuf alignment types (`vg::Alignment`, `vg::Mapping`,
+  `vg::Position`, `vg::Edit`) that `cdx_coverage` reads
+- **`cdx_lib`** — a small companion library providing the CDX format types
+  and I/O, developed alongside `cdx_coverage`. In this monorepo it resolves
+  to the sibling `../lib` directory automatically; outside it, point
+  `CDX_LIB_DIR` at a separate checkout (`-DCDX_LIB_DIR=/path/to/cdx_lib`)
+
+### Runtime-only dependency (circular graphs)
+
+Circular plots are rendered by a small Python script invoked as a
+subprocess (all coverage/smoothing/statistics computation still happens in
+C++; Python only handles the polar plot drawing via
+[pycirclize](https://github.com/moshi4/pyCirclize)). This is **not**
+required to build or run `cdx_coverage` with linear plots.
+
+By default, the build automatically provisions a private Python
+environment for this — see **[CIRCULAR_PLOT_SETUP.md](./python_script/CIRCULAR_PLOT_SETUP.md)** for details, manual setup, and troubleshooting.
+
+## Build
+
+```bash
+cmake -B build -S .
+cmake --build build -j
+```
+
+The first configure needs a working internet connection: CMake's
+`FetchContent` fetches `libvgio` (and, unless a usable system Abseil is
+found, Abseil - see below) automatically. `cdx_lib` resolves to `../lib` in
+this monorepo with no fetch needed.
+
+The compiled binary is `build/cdx_coverage`. If a Python 3 interpreter was
+found during configuration, a private virtual environment for circular
+graph rendering is also provisioned automatically next to it (best-effort,
+never fails the build — see
+[CIRCULAR_PLOT_SETUP.md](./python_script/CIRCULAR_PLOT_SETUP.md)).
+
+To install system-wide:
+
+```bash
+cmake --install build
+```
+
+### Testing
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+Enabled by default (`CDX_BUILD_TESTS=ON`); pass `-DCDX_BUILD_TESTS=OFF` to
+skip building the suite. GoogleTest is fetched automatically unless a
+`GTest::gtest_main` target already exists (e.g. bridged from `builder`'s
+own vendored copy when built inside the `cdx` monorepo - see the top-level
+`CMakeLists.txt`).
+
+### Installing dependencies
+
+#### macOS (Apple Silicon or Intel, via Homebrew)
+
+```bash
+brew install cmake pkg-config protobuf abseil htslib libomp cairo cli11
+```
+
+#### Ubuntu 20.04 or newer
+
+Ubuntu 20.04's default GCC (9.4) is too old (`>= 11` required) and its
+packaged Abseil (`libabsl-dev`) doesn't exist before Ubuntu 22.04 at all -
+`find_package(absl CONFIG QUIET)` in `CMakeLists.txt` detects this and
+automatically falls back to fetching a pinned Abseil release via
+`FetchContent`, so **no manual Abseil install/build is needed** even on
+Ubuntu 20.04.
+
+```bash
+sudo apt update
+sudo apt install -y \
+    build-essential \
+    g++-11 \
+    cmake \
+    git \
+    pkg-config \
+    protobuf-compiler \
+    libprotobuf-dev \
+    libhts-dev \
+    libcairo2-dev \
+    libjansson-dev
+```
+
+Package availability for CLI11 varies by Ubuntu release. If `libcli11-dev`
+isn't available in your repositories, install CLI11 as a single header
+instead:
+
+```bash
+mkdir -p include/CLI
+curl -L -o include/CLI/CLI.hpp \
+    https://github.com/CLIUtils/CLI11/releases/latest/download/CLI11.hpp
+```
+
+> For testing the *whole* `cdx` toolkit (all three branches together,
+> including this one) on a bare Ubuntu 20.04 box or in Docker, use
+> `scripts/test_ubuntu20.sh` at the repository root instead - it installs
+> everything above automatically. See the top-level README.
 
 ## Project layout
 
@@ -312,12 +271,13 @@ src/                 C++ source (CLI, CDX/GAM I/O, coverage projection,
 python_script/       circular_plot.py — pycirclize rendering backend for
                       circular graphs, invoked as a subprocess
 cmake/                build-time helper scripts (Python env provisioning)
-deps/libvgio/         libvgio git submodule
+deps/libvgio/         libvgio, fetched via CMake FetchContent (not committed)
 ```
 
-`cdx_lib` and (for `-DCDX_BUILD_TESTS=ON`, the default) GoogleTest are not
-vendored under `deps/` — both are fetched into the build directory
-(`build/_deps/`) by CMake's `FetchContent` at configure time.
+`cdx_lib`, `libvgio`, and (for `-DCDX_BUILD_TESTS=ON`, the default)
+GoogleTest are not committed under `deps/` - `cdx_lib` is a plain sibling
+directory (`../lib`), while `libvgio`/GoogleTest are fetched into the build
+directory (`build/_deps/`) by CMake's `FetchContent` at configure time.
 
 ## License
 
