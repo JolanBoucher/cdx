@@ -38,8 +38,33 @@ find_package(PkgConfig REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(Threads REQUIRED)
 
-# Find Abseil (required by modern Protobuf on Homebrew / macOS)
-find_package(absl REQUIRED)
+# ---------------------------------------------------------------------------
+# Abseil (needed by libvgio's Protobuf-based logging - see the
+# target_link_libraries(... absl::log_internal_message ...) calls further
+# below)
+# ---------------------------------------------------------------------------
+# Not every platform ships a usable Abseil: Homebrew's modern Protobuf on
+# macOS pulls it in as a sibling package, but e.g. Ubuntu 20.04's own apt
+# Protobuf (3.6.1) predates Abseil entirely, and Ubuntu doesn't package
+# libabsl-dev before 22.04 (jammy). So: prefer whatever the system already
+# provides (fast, no network needed), and fall back to auto-fetching a
+# pinned Abseil release otherwise - the same approach already used for
+# CLI11/libbdsg/GBWT/GBWTGraph/sdsl-lite (builder/) and libvgio (below).
+find_package(absl CONFIG QUIET)
+
+if(NOT absl_FOUND)
+    message(STATUS "System Abseil not found - fetching a pinned release instead.")
+    include(FetchContent)
+    FetchContent_Declare(
+            absl
+            GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
+            GIT_TAG 20230802.1 # LTS branch, Aug 2023, Patch 1
+            SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/abseil-cpp"
+    )
+    set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
+    set(ABSL_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(absl)
+endif()
 
 # Homebrew installs libomp as a keg-only package on Apple Silicon / Intel macOS
 if(APPLE)
