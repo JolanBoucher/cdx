@@ -64,6 +64,22 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CDX_BUILDER_BUILD_TESTS ON CACHE BOOL "Build cdx_builder's own unit test suite")
 set(CDX_BUILD_TESTS ON CACHE BOOL "Build cdx_coverage's own unit test suite")
 
+# lib/CMakeLists.txt, and builder's/coverage's own CMakeLists.txt (when their
+# respective *_BUILD_TESTS is ON), each call enable_testing() themselves -
+# that's enough to make `ctest`/"Run All Tests" work when any of the three is
+# configured standalone (its own CMakeLists.txt is then the top of the build
+# tree). But CTest only walks into a subdirectory's tests if *every* level
+# from the actual top of the build tree down to it also called
+# enable_testing() - lib/builder/coverage being add_subdirectory()'d here
+# without this project itself ever calling it left the root
+# CTestTestfile.cmake with no entries at all pointing into any of them, so
+# `ctest`/CLion's "All CTest"/"CoverageTest" run configurations (which invoke
+# ctest from this project's own build dir root) always reported "No tests
+# were found!!!" - even though every individual test executable still built
+# and ran fine on its own (that doesn't go through CTest's directory tree at
+# all). This one call closes that gap.
+enable_testing()
+
 add_subdirectory(lib)
 add_subdirectory(builder)
 

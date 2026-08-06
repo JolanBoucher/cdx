@@ -21,8 +21,20 @@ include(GoogleTest)
 #     LIBS     <extra libraries to link, optional>
 # )
 #
-# Always links against gtest/gtest_main and against ${CMAKE_SOURCE_DIR}/src so
-# test files can '#include "some_module.h"' directly.
+# Always links against gtest/gtest_main and against ${PROJECT_SOURCE_DIR}/src
+# so test files can '#include "some_module.h"' directly. PROJECT_SOURCE_DIR
+# (not CMAKE_SOURCE_DIR) deliberately: it resolves to builder/'s own root in
+# BOTH contexts this file can run in - a standalone `cmake -S builder -B ...`
+# configure (where builder/CMakeLists.txt's own `project(cdx_builder CXX)` is
+# also the top-level project) AND the merged cdx monorepo configure (where
+# builder is add_subdirectory()'d from cdx/CMakeLists.txt's own, different
+# `project(cdx_toolkit ...)`). CMAKE_SOURCE_DIR always means "the outermost
+# project's source dir" regardless of nesting, so it silently pointed at
+# cdx/ instead of cdx/builder/ the moment CDX_BUILDER_BUILD_TESTS started
+# defaulting to ON in the merged build - every add_executable() below then
+# failed with "Cannot find source file: .../cdx/src/CSRMatrix.cpp" (missing
+# the "builder/" in the middle). PROJECT_SOURCE_DIR tracks the nearest
+# enclosing project() instead, so it's correct either way.
 function(add_cdx_test NAME)
     cmake_parse_arguments(ARG "" "" "SOURCES;INCLUDES;LIBS" ${ARGN})
 
@@ -38,7 +50,7 @@ function(add_cdx_test NAME)
     add_executable(${NAME} ${ARG_SOURCES})
 
     target_include_directories(${NAME} PRIVATE
-            ${CMAKE_SOURCE_DIR}/src
+            ${PROJECT_SOURCE_DIR}/src
             ${ARG_INCLUDES}
     )
 
@@ -69,15 +81,15 @@ endfunction()
 add_cdx_test(test_csr_matrix
         SOURCES
         test_csr_matrix.cpp
-        ${CMAKE_SOURCE_DIR}/src/CSRMatrix.cpp
+        ${PROJECT_SOURCE_DIR}/src/CSRMatrix.cpp
 )
 
 # --- graph_linearization: CSR construction + topological relaxation ----------
 add_cdx_test(test_graph_linearization
         SOURCES
         test_graph_linearization.cpp
-        ${CMAKE_SOURCE_DIR}/src/graph_linearization.cpp
-        ${CMAKE_SOURCE_DIR}/src/CSRMatrix.cpp
+        ${PROJECT_SOURCE_DIR}/src/graph_linearization.cpp
+        ${PROJECT_SOURCE_DIR}/src/CSRMatrix.cpp
         INCLUDES
         ${Boost_INCLUDE_DIRS}
         LIBS
@@ -89,14 +101,14 @@ add_cdx_test(test_graph_linearization
 add_cdx_test(test_graph_indexing
         SOURCES
         test_graph_indexing.cpp
-        ${CMAKE_SOURCE_DIR}/src/graph_indexing.cpp
+        ${PROJECT_SOURCE_DIR}/src/graph_indexing.cpp
 )
 
 # --- cdx_writer: binary CDX + TSV serialization -------------------------------
 add_cdx_test(test_cdx_writer
         SOURCES
         test_cdx_writer.cpp
-        ${CMAKE_SOURCE_DIR}/src/cdx_writer.cpp
+        ${PROJECT_SOURCE_DIR}/src/cdx_writer.cpp
         INCLUDES
         ${ZSTD_INCLUDE_DIR}
         LIBS
@@ -108,7 +120,7 @@ add_cdx_test(test_cdx_writer
 add_cdx_test(test_cli
         SOURCES
         test_cli.cpp
-        ${CMAKE_SOURCE_DIR}/src/cli.cpp
+        ${PROJECT_SOURCE_DIR}/src/cli.cpp
         LIBS
         CLI11::CLI11
 )
@@ -117,7 +129,7 @@ add_cdx_test(test_cli
 add_cdx_test(test_gbz_io
         SOURCES
         test_gbz_io.cpp
-        ${CMAKE_SOURCE_DIR}/src/gbz_IO.cpp
+        ${PROJECT_SOURCE_DIR}/src/gbz_IO.cpp
         INCLUDES
         ${GBWT_INCLUDE_DIR}
         ${GBWTGRAPH_INCLUDE_DIR}
