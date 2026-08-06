@@ -1,0 +1,13 @@
+# Dockerfile only clones the repo fresh from GitHub (git clone) - it never
+# COPYs the local working tree - but `docker build` still tars up this whole
+# directory as build context before even reading the Dockerfile. Ignoring
+# the heavy, disposable local artifacts keeps that step fast.
+cmake-build-*/
+build-ubuntu20-test/
+build/
+Build/
+builder/deps/
+coverage/deps/
+.git/
+.idea/
+.vscode/
