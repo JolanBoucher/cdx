@@ -144,7 +144,7 @@ parser.
 | `<input.gbz>` | Path to the input GBZ pangenome graph (required). |
 | `-i, --iteration INT` | Maximum relaxation iterations. Default: `100`. |
 | `-t, --threshold FLOAT` | Convergence threshold; smaller values increase accuracy but may need more iterations. Default: `0.01`. |
-| `-l, --lambda-anchor FLOAT` | Balance between path-derived coordinates (`1.0`) and topology smoothing (`0.0`), in `[0.0, 1.0]`. Recommended: `0.6`-`0.8`. Default: `0.7`. |
+| `-l, --lambda-anchor FLOAT` | Balance between path-derived coordinates (`1.0`) and topology smoothing (`0.0`), in `[0.0, 1.0]`. For most graphs between 0.6 and 0.8 work best. If your graph is made out of 10+ path lambda value closer to 1.0 usually work best. For discontinuous or messy graphs a lower lambda < 0.5 may help producing better result.  Recommended: `0.6`-`0.8`. Default: `0.7`. |
 | `-o, --output FILE` | Output CDX file path. Default: `<input>.cdx`. |
 | `-c, --compress LEVEL` | Write a Zstandard-compressed `.cdx.zst` file instead. Level `1`-`22`. Default (flag with no value): `3`. Mutually exclusive with `-d/--debug`. |
 | `-d, --debug` | Write a human-readable TSV representation to stdout instead of a binary CDX file. Mutually exclusive with `-c/--compress`. |
